@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, X, ExternalLink, Bell, Search, Trash2, Pencil, LogOut } from "lucide-react";
+import {
+  Plus, X, ExternalLink, Bell, Search, Trash2, Pencil, LogOut,
+  LayoutGrid, Table2, Briefcase,
+} from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
+
+const FONT = "'Plus Jakarta Sans','Inter',system-ui,-apple-system,'Segoe UI',sans-serif";
 
 const STATUSES = [
   { key: "wishlist", label: "Wishlist" },
@@ -12,12 +17,12 @@ const STATUSES = [
 ];
 
 const STATUS_STYLE = {
-  wishlist: { bg: "#F3F4F6", text: "#4B5563", dot: "#9CA3AF" },
-  applied: { bg: "#DBEAFE", text: "#1E40AF", dot: "#3B82F6" },
-  screening: { bg: "#FEF3C7", text: "#92400E", dot: "#F59E0B" },
-  interview: { bg: "#FFEDD5", text: "#9A3412", dot: "#FB923C" },
-  offer: { bg: "#DCFCE7", text: "#166534", dot: "#22C55E" },
-  closed: { bg: "#F3F4F6", text: "#6B7280", dot: "#9CA3AF" },
+  wishlist: { bg: "#CFFAFE", text: "#0E7490", dot: "#06B6D4", accent: "#06B6D4", soft: "#ECFEFF" },
+  applied: { bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6", accent: "#3B82F6", soft: "#EFF6FF" },
+  screening: { bg: "#FEF3C7", text: "#B45309", dot: "#F59E0B", accent: "#F59E0B", soft: "#FFFBEB" },
+  interview: { bg: "#F3E8FF", text: "#7E22CE", dot: "#A855F7", accent: "#A855F7", soft: "#FAF5FF" },
+  offer: { bg: "#DCFCE7", text: "#15803D", dot: "#22C55E", accent: "#22C55E", soft: "#F0FDF4" },
+  closed: { bg: "#E2E8F0", text: "#475569", dot: "#334155", accent: "#334155", soft: "#F1F5F9" },
 };
 
 const PLATFORMS = ["Naukri", "LinkedIn", "Indeed", "Company site", "Referral", "Instahyre", "Cutshort", "Wellfound", "Other"];
@@ -34,6 +39,26 @@ const emptyForm = {
   contact: "",
   notes: "",
 };
+
+const GLOBAL_CSS = `
+@keyframes jtFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes jtPop { from { opacity: 0; transform: scale(.96) translateY(10px); } to { opacity: 1; transform: none; } }
+.jt-card { animation: jtFadeUp .35s ease both; transition: transform .15s ease, box-shadow .15s ease; }
+.jt-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -14px rgba(99,102,241,.45); }
+.jt-btn-primary { background: #007AFF; transition: background .15s ease, transform .1s ease; }
+.jt-btn-primary:hover { background: #0071E3; }
+.jt-btn-primary:active { transform: scale(.98); }
+.jt-icon-btn { transition: background .15s ease, color .15s ease; border-radius: 8px; padding: 4px; }
+.jt-icon-btn:hover { background: #EEF2FF; color: #6D28D9 !important; }
+.jt-input { transition: border-color .15s ease, box-shadow .15s ease; }
+.jt-input:focus { outline: none; border-color: #A855F7 !important; box-shadow: 0 0 0 3px rgba(168,85,247,.18); }
+.jt-table-row { transition: background .12s ease; }
+.jt-table-row:hover { background: #F8FAFF !important; }
+.jt-modal { animation: jtPop .22s ease both; }
+.jt-gradient-text { background: linear-gradient(92deg,#6366F1,#A855F7 50%,#EC4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.jt-stat { animation: jtFadeUp .4s ease both; transition: transform .15s ease, box-shadow .15s ease; }
+.jt-stat:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -16px rgba(15,23,42,.25); }
+`;
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -61,6 +86,19 @@ function toPayload(form) {
     contact: emptyToNull(form.contact),
     notes: emptyToNull(form.notes),
   };
+}
+
+function followUpColor(due) {
+  if (due === null) return "#9CA3AF";
+  if (due <= 0) return "#DC2626";
+  if (due <= 2) return "#D97706";
+  return "#64748B";
+}
+
+function followUpLabel(job) {
+  const due = daysUntil(job.follow_up);
+  if (due === null) return null;
+  return due < 0 ? `${Math.abs(due)}d overdue` : due === 0 ? "today" : `in ${due}d`;
 }
 
 function LoginScreen() {
@@ -94,39 +132,47 @@ function LoginScreen() {
   }
 
   return (
-    <div style={{ maxWidth: 360, margin: "80px auto", fontFamily: "Arial, sans-serif", textAlign: "center" }}>
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Job search tracker</h2>
-      <p style={{ fontSize: 13, color: "#6B7280", marginBottom: 20 }}>
-        Sign in with your email to sync your applications across devices.
-      </p>
-      {!isSupabaseConfigured && (
-        <div style={{ fontSize: 12, color: "#92400E", background: "#FEF3C7", borderRadius: 8, padding: "8px 12px", marginBottom: 16, textAlign: "left" }}>
-          Supabase isn't configured — sign-in won't work until you copy <code>.env.example</code> to{" "}
-          <code>.env</code> and restart the dev server.
+    <div style={{ maxWidth: 400, margin: "90px auto", fontFamily: FONT, padding: "0 16px" }}>
+      <div style={{ background: "rgba(255,255,255,.9)", backdropFilter: "blur(12px)", borderRadius: 24, padding: 36, textAlign: "center", boxShadow: "0 24px 60px -24px rgba(99,102,241,.4)", border: "1px solid rgba(255,255,255,.8)" }}>
+        <div style={{ width: 60, height: 60, borderRadius: 18, margin: "0 auto 16px", background: "#1E3A8A", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 24px -8px rgba(30,58,138,.55)" }}>
+          <Briefcase size={28} color="#fff" />
         </div>
-      )}
-      {sent ? (
-        <p style={{ fontSize: 13, color: "#166534" }}>
-          Check your inbox for a sign-in link.
+        <h2 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 6px", color: "#1E3A8A" }}>Job search tracker</h2>
+        <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 22px" }}>
+          Sign in with your email to sync your applications across devices.
         </p>
-      ) : (
-        <>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ width: "100%", padding: "9px 10px", borderRadius: 6, border: "1px solid #E5E7EB", fontSize: 13, boxSizing: "border-box" }}
-          />
-          {error && <div style={{ fontSize: 12, color: "#DC2626", marginTop: 6 }}>{error}</div>}
-          <button
-            onClick={sendLink}
-            style={{ marginTop: 12, width: "100%", padding: "9px 10px", borderRadius: 6, border: "none", background: "#111827", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-          >
-            Send sign-in link
-          </button>
-        </>
-      )}
+        {!isSupabaseConfigured && (
+          <div style={{ fontSize: 12, color: "#92400E", background: "linear-gradient(90deg,#FFFBEB,#FEF3C7)", border: "1px solid #FCD34D", borderRadius: 10, padding: "8px 12px", marginBottom: 16, textAlign: "left" }}>
+            Supabase isn't configured — sign-in won't work until you copy <code>.env.example</code> to{" "}
+            <code>.env</code> and restart the dev server.
+          </div>
+        )}
+        {sent ? (
+          <p style={{ fontSize: 14, color: "#15803D", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "12px" }}>
+            Check your inbox for a sign-in link.
+          </p>
+        ) : (
+          <>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendLink()}
+              className="jt-input"
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, boxSizing: "border-box", fontFamily: FONT }}
+            />
+            {error && <div style={{ fontSize: 12, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "8px 12px", marginTop: 10 }}>{error}</div>}
+            <button
+              onClick={sendLink}
+              className="jt-btn-primary"
+              style={{ marginTop: 14, width: "100%", padding: "12px 10px", borderRadius: 12, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}
+            >
+              Send sign-in link
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -192,6 +238,17 @@ export default function App() {
     });
   }, [jobs]);
 
+  const stats = useMemo(() => {
+    const count = (key) => jobs.filter((j) => j.status === key).length;
+    return [
+      { label: "Total", value: jobs.length, color: "#6366F1", bg: "#EEF2FF" },
+      { label: "In pipeline", value: jobs.filter((j) => j.status !== "closed").length, color: "#3B82F6", bg: "#EFF6FF" },
+      { label: "Interviews", value: count("interview"), color: "#A855F7", bg: "#FAF5FF" },
+      { label: "Offers", value: count("offer"), color: "#22C55E", bg: "#F0FDF4" },
+      { label: "Follow-ups due", value: dueFollowUps.length, color: "#F59E0B", bg: "#FFFBEB" },
+    ];
+  }, [jobs, dueFollowUps]);
+
   function openAdd() {
     setForm({ ...emptyForm });
     setSaveError("");
@@ -255,291 +312,338 @@ export default function App() {
   if (!session) return <LoginScreen />;
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#111827", maxWidth: 1400, width: "100%", margin: "0 auto", padding: 20, boxSizing: "border-box" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Job search tracker</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280" }}>
-            {jobs.length} application{jobs.length !== 1 ? "s" : ""} · signed in as {session.user.email}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={openAdd}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "#111827", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-          >
-            <Plus size={16} /> Add application
-          </button>
-          <button
-            onClick={() => supabase.auth.signOut()}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
-          >
-            <LogOut size={14} /> Sign out
-          </button>
-        </div>
-      </div>
+    <div style={{ fontFamily: FONT, color: "#0F172A", minHeight: "100vh", background: "radial-gradient(1000px 420px at 8% -5%, #DDD6FE 0%, transparent 60%), radial-gradient(900px 400px at 92% 0%, #FBCFE8 0%, transparent 55%), radial-gradient(900px 520px at 50% 110%, #BFDBFE 0%, transparent 60%), #F8FAFF" }}>
+      <style>{GLOBAL_CSS}</style>
+      <div style={{ maxWidth: 1400, width: "100%", margin: "0 auto", padding: 20, boxSizing: "border-box" }}>
 
-      {dueFollowUps.length > 0 && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "#FEF3C7", color: "#92400E", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
-          <Bell size={16} style={{ marginTop: 1, flexShrink: 0 }} />
-          <div>
-            <strong>{dueFollowUps.length} follow-up{dueFollowUps.length !== 1 ? "s" : ""} due soon:</strong>{" "}
-            {dueFollowUps.map((j) => j.company).join(", ")}
+        {/* Header */}
+        <div style={{ background: "rgba(255,255,255,.85)", backdropFilter: "blur(12px)", borderRadius: 20, padding: "18px 22px", marginBottom: 16, boxShadow: "0 16px 40px -24px rgba(99,102,241,.35)", border: "1px solid rgba(255,255,255,.9)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 15, background: "#1E3A8A", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 22px -8px rgba(30,58,138,.55)", flexShrink: 0 }}>
+              <Briefcase size={24} color="#fff" />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: -0.3, color: "#1E3A8A" }}>Job search tracker</h2>
+              <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+                {jobs.length} application{jobs.length !== 1 ? "s" : ""} · signed in as {session.user.email}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={openAdd}
+              className="jt-btn-primary"
+              style={{ display: "flex", alignItems: "center", gap: 7, color: "#fff", border: "none", borderRadius: 12, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT, boxShadow: "0 10px 20px -8px rgba(0,122,255,.55)" }}
+            >
+              <Plus size={16} /> Add application
+            </button>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              style={{ display: "flex", alignItems: "center", gap: 7, background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#475569", fontFamily: FONT }}
+            >
+              <LogOut size={14} /> Sign out
+            </button>
           </div>
         </div>
-      )}
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", flex: "1 1 200px" }}>
-          <Search size={15} color="#9CA3AF" />
-          <input placeholder="Search company or role" value={query} onChange={(e) => setQuery(e.target.value)} style={{ border: "none", outline: "none", fontSize: 13, width: "100%" }} />
-        </div>
-        <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", fontSize: 13 }}>
-          <option>All</option>
-          {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
-        </select>
-        <div style={{ display: "flex", border: "1px solid #E5E7EB", borderRadius: 8, overflow: "hidden", marginLeft: "auto" }}>
-          <button
-            onClick={() => setView("board")}
-            style={{
-              border: "none", padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              background: view === "board" ? "#111827" : "#fff",
-              color: view === "board" ? "#fff" : "#4B5563",
-            }}
-          >
-            Board
-          </button>
-          <button
-            onClick={() => setView("table")}
-            style={{
-              border: "none", padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              background: view === "table" ? "#111827" : "#fff",
-              color: view === "table" ? "#fff" : "#4B5563",
-            }}
-          >
-            Table
-          </button>
-        </div>
-      </div>
-
-      {jobs.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "48px 16px", color: "#9CA3AF", border: "1px dashed #E5E7EB", borderRadius: 12 }}>
-          <p style={{ margin: 0, fontSize: 14 }}>No applications yet. Add your first one to start tracking.</p>
-        </div>
-      ) : view === "board" ? (
-        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(200px, 1fr))", gap: 12 }}>
-          {STATUSES.map((s) => (
-            <div
-              key={s.key}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setDropTarget(s.key);
-              }}
-              onDragLeave={(e) => {
-                // Ignore leave events when moving between children of the same column
-                if (e.currentTarget.contains(e.relatedTarget)) return;
-                setDropTarget((t) => (t === s.key ? null : t));
-              }}
-              onDrop={(e) => handleDrop(e, s.key)}
-              style={{
-                background: dropTarget === s.key ? "#EFF6FF" : "#F9FAFB",
-                border: dropTarget === s.key ? "2px dashed #3B82F6" : "2px dashed transparent",
-                borderRadius: 12,
-                padding: 8,
-                minHeight: 120,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "0 4px" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: STATUS_STYLE[s.key].dot, display: "inline-block" }} />
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{s.label}</span>
-                <span style={{ fontSize: 12, color: "#9CA3AF" }}>{byStatus[s.key].length}</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 40 }}>
-                {byStatus[s.key].map((job) => {
-                  const due = daysUntil(job.follow_up);
-                  const dragging = dragId === job.id;
-                  return (
-                    <div
-                      key={job.id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", job.id);
-                        setDragId(job.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setDropTarget(null);
-                      }}
-                      style={{
-                        background: "#fff",
-                        border: "1px solid #E5E7EB",
-                        borderRadius: 10,
-                        padding: 10,
-                        cursor: "grab",
-                        opacity: dragging ? 0.4 : 1,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>{job.company}</div>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => openEdit(job)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9CA3AF" }} aria-label="Edit"><Pencil size={13} /></button>
-                          <button onClick={() => removeJob(job.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9CA3AF" }} aria-label="Delete"><Trash2 size={13} /></button>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 12, color: "#4B5563", marginTop: 2 }}>{job.role}</div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: STATUS_STYLE[s.key].bg, color: STATUS_STYLE[s.key].text }}>{job.platform}</span>
-                        {job.link && <a href={job.link} target="_blank" rel="noreferrer" style={{ color: "#6B7280" }} aria-label="Open link"><ExternalLink size={12} /></a>}
-                      </div>
-                      {due !== null && (
-                        <div style={{ fontSize: 11, marginTop: 6, color: due <= 0 ? "#DC2626" : due <= 2 ? "#D97706" : "#9CA3AF" }}>
-                          Follow up {due < 0 ? `${Math.abs(due)}d overdue` : due === 0 ? "today" : `in ${due}d`}
-                        </div>
-                      )}
-                      <select value={job.status} onChange={(e) => moveStatus(job.id, e.target.value)} style={{ marginTop: 8, width: "100%", fontSize: 11, padding: "4px 6px", borderRadius: 6, border: "1px solid #E5E7EB" }}>
-                        {STATUSES.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
-                      </select>
-                    </div>
-                  );
-                })}
+        {/* Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
+          {stats.map((s, i) => (
+            <div key={s.label} className="jt-stat" style={{ animationDelay: `${i * 60}ms`, background: "rgba(255,255,255,.85)", backdropFilter: "blur(8px)", borderRadius: 16, padding: "12px 16px", border: "1px solid rgba(255,255,255,.9)", boxShadow: "0 10px 24px -18px rgba(15,23,42,.3)", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 12, height: 12, borderRadius: "50%", background: s.color, boxShadow: `0 0 0 4px ${s.bg}`, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>{s.value}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#64748B" }}>{s.label}</div>
               </div>
             </div>
           ))}
         </div>
+
+        {dueFollowUps.length > 0 && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "linear-gradient(90deg,#FFFBEB,#FEF3C7)", border: "1px solid #FCD34D", color: "#92400E", borderRadius: 14, padding: "12px 16px", marginBottom: 16, fontSize: 13, boxShadow: "0 10px 24px -18px rgba(245,158,11,.5)" }}>
+            <Bell size={17} style={{ marginTop: 1, flexShrink: 0 }} />
+            <div>
+              <strong>{dueFollowUps.length} follow-up{dueFollowUps.length !== 1 ? "s" : ""} due soon:</strong>{" "}
+              {dueFollowUps.map((j) => j.company).join(", ")}
+            </div>
+          </div>
+        )}
+
+        {/* Controls */}
+        <div style={{ background: "rgba(255,255,255,.85)", backdropFilter: "blur(12px)", borderRadius: 16, padding: 12, marginBottom: 16, border: "1px solid rgba(255,255,255,.9)", boxShadow: "0 10px 24px -20px rgba(15,23,42,.3)", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "8px 12px", flex: "1 1 220px", background: "#fff" }}>
+            <Search size={16} color="#A855F7" />
+            <input placeholder="Search company or role" value={query} onChange={(e) => setQuery(e.target.value)} className="jt-input" style={{ border: "none", outline: "none", fontSize: 13, width: "100%", fontFamily: FONT, background: "transparent" }} />
+          </div>
+          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="jt-input" style={{ border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "8px 12px", fontSize: 13, fontFamily: FONT, background: "#fff", fontWeight: 600, color: "#475569" }}>
+            <option>All</option>
+            {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <div style={{ display: "flex", background: "#F1F5F9", borderRadius: 12, padding: 3, marginLeft: "auto" }}>
+            <button
+              onClick={() => setView("board")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, border: "none", padding: "7px 16px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT,
+                background: view === "board" ? "#007AFF" : "transparent",
+                color: view === "board" ? "#fff" : "#64748B",
+                boxShadow: view === "board" ? "0 6px 14px -6px rgba(0,122,255,.6)" : "none",
+              }}
+            >
+              <LayoutGrid size={14} /> Board
+            </button>
+            <button
+              onClick={() => setView("table")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, border: "none", padding: "7px 16px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT,
+                background: view === "table" ? "#007AFF" : "transparent",
+                color: view === "table" ? "#fff" : "#64748B",
+                boxShadow: view === "table" ? "0 6px 14px -6px rgba(0,122,255,.6)" : "none",
+              }}
+            >
+              <Table2 size={14} /> Table
+            </button>
+          </div>
         </div>
-      ) : (
-        <div style={{ overflowX: "auto", border: "1px solid #E5E7EB", borderRadius: 12, background: "#fff" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 960 }}>
-            <thead>
-              <tr style={{ textAlign: "left", background: "#F9FAFB" }}>
-                {["Company", "Role", "Platform", "Status", "Applied", "Follow-up", "Contact", "Link", "Notes", ""].map((h) => (
-                  <th key={h} style={thStyle}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((job) => {
-                const due = daysUntil(job.follow_up);
+
+        {jobs.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "56px 16px", color: "#94A3B8", border: "2px dashed #C4B5FD", borderRadius: 20, background: "rgba(255,255,255,.6)" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 18, margin: "0 auto 14px", background: "linear-gradient(135deg,#EEF2FF,#FAF5FF)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Briefcase size={26} color="#A855F7" />
+            </div>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "#64748B" }}>No applications yet. Add your first one to start tracking.</p>
+          </div>
+        ) : view === "board" ? (
+          <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(200px, 1fr))", gap: 12 }}>
+              {STATUSES.map((s) => {
+                const st = STATUS_STYLE[s.key];
+                const isTarget = dropTarget === s.key;
                 return (
-                  <tr key={job.id} style={{ borderTop: "1px solid #F3F4F6" }}>
-                    <td style={{ ...tdStyle, fontWeight: 700 }}>{job.company}</td>
-                    <td style={tdStyle}>{job.role}</td>
-                    <td style={tdStyle}>{job.platform}</td>
-                    <td style={tdStyle}>
-                      <select value={job.status} onChange={(e) => moveStatus(job.id, e.target.value)} style={{ fontSize: 12, padding: "4px 6px", borderRadius: 6, border: "1px solid #E5E7EB" }}>
-                        {STATUSES.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
-                      </select>
-                    </td>
-                    <td style={tdStyle}>{job.date_applied || "—"}</td>
-                    <td style={{ ...tdStyle, color: due === null ? "#9CA3AF" : due <= 0 ? "#DC2626" : due <= 2 ? "#D97706" : "#4B5563" }}>
-                      {job.follow_up
-                        ? `${job.follow_up}${due !== null ? (due < 0 ? ` (${Math.abs(due)}d overdue)` : due === 0 ? " (today)" : ` (in ${due}d)`) : ""}`
-                        : "—"}
-                    </td>
-                    <td style={tdStyle}>{job.contact || "—"}</td>
-                    <td style={tdStyle}>
-                      {job.link
-                        ? <a href={job.link} target="_blank" rel="noreferrer" style={{ color: "#6B7280" }} aria-label="Open link"><ExternalLink size={14} /></a>
-                        : "—"}
-                    </td>
-                    <td style={{ ...tdStyle, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={job.notes || ""}>
-                      {job.notes || "—"}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
-                      <button onClick={() => openEdit(job)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9CA3AF" }} aria-label="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => removeJob(job.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9CA3AF", marginLeft: 4 }} aria-label="Delete"><Trash2 size={14} /></button>
-                    </td>
-                  </tr>
+                  <div
+                    key={s.key}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setDropTarget(s.key);
+                    }}
+                    onDragLeave={(e) => {
+                      // Ignore leave events when moving between children of the same column
+                      if (e.currentTarget.contains(e.relatedTarget)) return;
+                      setDropTarget((t) => (t === s.key ? null : t));
+                    }}
+                    onDrop={(e) => handleDrop(e, s.key)}
+                    style={{
+                      background: isTarget ? "#fff" : st.soft,
+                      border: isTarget ? `2px dashed ${st.accent}` : `1px solid ${st.bg}`,
+                      borderRadius: 16,
+                      padding: 10,
+                      minHeight: 140,
+                      transition: "background .15s ease, border .15s ease",
+                      boxShadow: isTarget ? `0 0 0 4px ${st.bg}` : "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, padding: "2px 4px" }}>
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: st.dot, boxShadow: `0 0 0 3px ${st.bg}`, display: "inline-block" }} />
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{s.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: st.text, background: "#fff", border: `1px solid ${st.bg}`, borderRadius: 999, padding: "1px 8px", marginLeft: "auto" }}>{byStatus[s.key].length}</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 40 }}>
+                      {byStatus[s.key].map((job, idx) => {
+                        const due = daysUntil(job.follow_up);
+                        const dragging = dragId === job.id;
+                        return (
+                          <div
+                            key={job.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", job.id);
+                              setDragId(job.id);
+                            }}
+                            onDragEnd={() => {
+                              setDragId(null);
+                              setDropTarget(null);
+                            }}
+                            className="jt-card"
+                            style={{
+                              animationDelay: `${Math.min(idx, 8) * 45}ms`,
+                              background: "#fff",
+                              border: "1px solid #F1F5F9",
+                              borderLeft: `4px solid ${st.accent}`,
+                              borderRadius: 14,
+                              padding: 12,
+                              cursor: "grab",
+                              opacity: dragging ? 0.4 : 1,
+                              boxShadow: "0 4px 12px -6px rgba(15,23,42,.15)",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 6 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0F172A" }}>{job.company}</div>
+                              <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                                <button onClick={() => openEdit(job)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3AF" }} aria-label="Edit"><Pencil size={13} /></button>
+                                <button onClick={() => removeJob(job.id)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8" }} aria-label="Delete"><Trash2 size={13} /></button>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 12, color: "#64748B", marginTop: 2, fontWeight: 500 }}>{job.role}</div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 9 }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: st.bg, color: st.text }}>{job.platform}</span>
+                              {job.link && <a href={job.link} target="_blank" rel="noreferrer" style={{ color: "#94A3B8" }} aria-label="Open link"><ExternalLink size={13} /></a>}
+                            </div>
+                            {due !== null && (
+                              <div style={{ fontSize: 11, fontWeight: 700, marginTop: 7, color: followUpColor(due) }}>
+                                Follow up {followUpLabel(job)}
+                              </div>
+                            )}
+                            <select value={job.status} onChange={(e) => moveStatus(job.id, e.target.value)} className="jt-input" style={{ marginTop: 9, width: "100%", fontSize: 11, fontWeight: 600, padding: "5px 7px", borderRadius: 8, border: "1.5px solid #F1F5F9", background: st.soft, color: st.text, fontFamily: FONT }}>
+                              {STATUSES.map((stt) => <option key={stt.key} value={stt.key}>{stt.label}</option>)}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div style={{ textAlign: "center", padding: "32px 16px", color: "#9CA3AF", fontSize: 13 }}>
-              No applications match your search.
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto", borderRadius: 18, background: "#fff", boxShadow: "0 16px 40px -28px rgba(15,23,42,.3)", border: "1px solid #F1F5F9" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 960 }}>
+              <thead>
+                <tr style={{ textAlign: "left", background: "linear-gradient(90deg,#EEF2FF,#FAF5FF,#FDF2F8)" }}>
+                  {["Company", "Role", "Platform", "Status", "Applied", "Follow-up", "Contact", "Link", "Notes", ""].map((h) => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((job) => {
+                  const due = daysUntil(job.follow_up);
+                  const st = STATUS_STYLE[job.status] || STATUS_STYLE.wishlist;
+                  return (
+                    <tr key={job.id} className="jt-table-row" style={{ borderTop: "1px solid #F1F5F9" }}>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{job.company}</td>
+                      <td style={{ ...tdStyle, color: "#475569" }}>{job.role}</td>
+                      <td style={tdStyle}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "#F1F5F9", color: "#475569", whiteSpace: "nowrap" }}>{job.platform}</span>
+                      </td>
+                      <td style={tdStyle}>
+                        <select value={job.status} onChange={(e) => moveStatus(job.id, e.target.value)} className="jt-input" style={{ fontSize: 12, fontWeight: 700, padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${st.bg}`, background: st.soft, color: st.text, fontFamily: FONT }}>
+                          {STATUSES.map((stt) => <option key={stt.key} value={stt.key}>{stt.label}</option>)}
+                        </select>
+                      </td>
+                      <td style={tdStyle}>{job.date_applied || "—"}</td>
+                      <td style={{ ...tdStyle, color: followUpColor(due), fontWeight: due !== null && due <= 2 ? 700 : 400, whiteSpace: "nowrap" }}>
+                        {job.follow_up ? `${job.follow_up}${due !== null ? ` (${followUpLabel(job)})` : ""}` : "—"}
+                      </td>
+                      <td style={tdStyle}>{job.contact || "—"}</td>
+                      <td style={tdStyle}>
+                        {job.link
+                          ? <a href={job.link} target="_blank" rel="noreferrer" style={{ color: "#A855F7" }} aria-label="Open link"><ExternalLink size={14} /></a>
+                          : "—"}
+                      </td>
+                      <td style={{ ...tdStyle, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#64748B" }} title={job.notes || ""}>
+                        {job.notes || "—"}
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                        <button onClick={() => openEdit(job)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8" }} aria-label="Edit"><Pencil size={14} /></button>
+                        <button onClick={() => removeJob(job.id)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8", marginLeft: 4 }} aria-label="Delete"><Trash2 size={14} /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filtered.length === 0 && (
+              <div style={{ textAlign: "center", padding: "36px 16px", color: "#94A3B8", fontSize: 13, fontWeight: 600 }}>
+                No applications match your search.
+              </div>
+            )}
+          </div>
+        )}
 
-      {modalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, width: 420, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{form.id ? "Edit application" : "Add application"}</h3>
-              <button onClick={() => setModalOpen(false)} style={{ border: "none", background: "none", cursor: "pointer" }} aria-label="Close"><X size={18} /></button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Company *</label>
-                <input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} style={inputStyle} />
+        {modalOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+            <div className="jt-modal" style={{ background: "#fff", borderRadius: 20, padding: 24, width: 440, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 32px 80px -24px rgba(76,29,149,.5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 className="jt-gradient-text" style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{form.id ? "Edit application" : "Add application"}</h3>
+                <button onClick={() => setModalOpen(false)} className="jt-icon-btn" style={{ border: "none", background: "#F1F5F9", cursor: "pointer", color: "#64748B", borderRadius: 10, padding: 6 }} aria-label="Close"><X size={16} /></button>
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Role *</label>
-                <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle} />
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>Platform</label>
-                  <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} style={inputStyle}>
-                    {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
-                  </select>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Company *</label>
+                  <input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className="jt-input" style={inputStyle} />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>Status</label>
-                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={inputStyle}>
-                    {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
+                <div>
+                  <label style={labelStyle}>Role *</label>
+                  <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="jt-input" style={inputStyle} />
                 </div>
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Job link</label>
-                <input value={form.link || ""} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://" style={inputStyle} />
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>Date applied</label>
-                  <input type="date" value={form.date_applied || ""} onChange={(e) => setForm({ ...form, date_applied: e.target.value })} style={inputStyle} />
+                <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Platform</label>
+                    <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} className="jt-input" style={inputStyle}>
+                      {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Status</label>
+                    <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="jt-input" style={inputStyle}>
+                      {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>Follow-up date</label>
-                  <input type="date" value={form.follow_up || ""} onChange={(e) => setForm({ ...form, follow_up: e.target.value })} style={inputStyle} />
+                <div>
+                  <label style={labelStyle}>Job link</label>
+                  <input value={form.link || ""} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://" className="jt-input" style={inputStyle} />
                 </div>
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Contact / referral</label>
-                <input value={form.contact || ""} onChange={(e) => setForm({ ...form, contact: e.target.value })} style={inputStyle} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Notes</label>
-                <textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
-              </div>
-              {saveError && <div style={{ fontSize: 12, color: "#DC2626" }}>{saveError}</div>}
-              <div style={{ display: "flex", gap: 8, marginTop: 6, justifyContent: "flex-end" }}>
-                <button onClick={() => setModalOpen(false)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #E5E7EB", background: "#fff", fontSize: 13, cursor: "pointer" }}>Cancel</button>
-                <button onClick={saveForm} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#111827", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Save</button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Date applied</label>
+                    <input type="date" value={form.date_applied || ""} onChange={(e) => setForm({ ...form, date_applied: e.target.value })} className="jt-input" style={inputStyle} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Follow-up date</label>
+                    <input type="date" value={form.follow_up || ""} onChange={(e) => setForm({ ...form, follow_up: e.target.value })} className="jt-input" style={inputStyle} />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Contact / referral</label>
+                  <input value={form.contact || ""} onChange={(e) => setForm({ ...form, contact: e.target.value })} className="jt-input" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Notes</label>
+                  <textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="jt-input" style={{ ...inputStyle, resize: "vertical" }} />
+                </div>
+                {saveError && <div style={{ fontSize: 12, fontWeight: 600, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "8px 12px" }}>{saveError}</div>}
+                <div style={{ display: "flex", gap: 10, marginTop: 6, justifyContent: "flex-end" }}>
+                  <button onClick={() => setModalOpen(false)} style={{ padding: "10px 18px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#475569", fontFamily: FONT }}>Cancel</button>
+                  <button onClick={saveForm} className="jt-btn-primary" style={{ padding: "10px 22px", borderRadius: 12, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Save</button>
+                </div>
               </div>
             </div>
           </div>
+        )}
+
+        <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: "#A78BFA", fontWeight: 600 }}>
+          Built with React + Supabase
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
+const labelStyle = { fontSize: 12, fontWeight: 700, color: "#475569" };
+
 const inputStyle = {
-  width: "100%", padding: "7px 9px", borderRadius: 6, border: "1px solid #E5E7EB",
-  fontSize: 13, marginTop: 3, boxSizing: "border-box", fontFamily: "Arial, sans-serif",
+  width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0",
+  fontSize: 13, marginTop: 4, boxSizing: "border-box", fontFamily: FONT, background: "#fff", color: "#0F172A",
 };
 
 const thStyle = {
-  padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B7280",
-  textTransform: "uppercase", letterSpacing: 0.4, whiteSpace: "nowrap",
+  padding: "12px 14px", fontSize: 11, fontWeight: 800, color: "#7C3AED",
+  textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap",
 };
 
 const tdStyle = {
-  padding: "10px 12px", fontSize: 13, color: "#111827", verticalAlign: "middle",
+  padding: "11px 14px", fontSize: 13, color: "#0F172A", verticalAlign: "middle",
 };

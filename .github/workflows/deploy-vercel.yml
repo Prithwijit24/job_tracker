@@ -1,0 +1,54 @@
+name: Deploy to Vercel
+
+# Manual deployments only: run from the Actions tab via "Run workflow"
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Vercel environment to deploy to"
+        type: choice
+        required: true
+        default: preview
+        options:
+          - preview
+          - production
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Build and deploy (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: job-tracker-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: job-tracker-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (CI check)
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=${{ inputs.environment }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build for Vercel
+        run: vercel build ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        run: vercel deploy --prebuilt ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}

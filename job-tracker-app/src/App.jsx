@@ -113,7 +113,13 @@ function LoginScreen() {
       return;
     }
     try {
-      const { error } = await supabase.auth.signInWithOtp({ email: email.trim() });
+      // Redirect back to wherever the app is actually running (localhost in
+      // dev, the Vercel URL in production) instead of Supabase's default
+      // Site URL. This URL must be allowlisted in Supabase Auth settings.
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: window.location.origin },
+      });
       if (error) setError(friendlyAuthError(error));
       else setSent(true);
     } catch (e) {

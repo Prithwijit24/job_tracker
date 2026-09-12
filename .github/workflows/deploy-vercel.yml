@@ -51,5 +51,11 @@ jobs:
       # already validates the production build locally.
       # Requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to be set in the
       # Vercel project for the target environment.
+      # NOTE: this step runs from the repo ROOT, not job-tracker-app/.
+      # The Vercel project has Root Directory = job-tracker-app, and the CLI
+      # appends that to the cwd — running from inside job-tracker-app/
+      # doubles the path (job-tracker-app/job-tracker-app) and fails with
+      # "The provided path ... does not exist".
       - name: Deploy to Vercel
+        working-directory: ${{ github.workspace }}
         run: vercel deploy ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}

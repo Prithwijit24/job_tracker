@@ -44,11 +44,12 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Pull Vercel project settings
-        run: vercel pull --yes --environment=${{ inputs.environment }} --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build for Vercel
-        run: vercel build ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
-
+      # Remote build on Vercel infra (same path as dashboard/Git deploys).
+      # Deliberately NOT using `vercel build` + `--prebuilt` here: the CLI's
+      # local build sandbox prunes devDependencies, so `vite build` fails
+      # with "vite: not found" (exit 127). The "Build (CI check)" step above
+      # already validates the production build locally.
+      # Requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to be set in the
+      # Vercel project for the target environment.
       - name: Deploy to Vercel
-        run: vercel deploy --prebuilt ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}

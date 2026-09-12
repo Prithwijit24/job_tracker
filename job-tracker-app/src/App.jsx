@@ -105,13 +105,24 @@ function LoginScreen() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Countdown that blocks resends while active
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   async function sendLink() {
+    if (sending || cooldown > 0) return;
     setError("");
     if (!email.trim() || !email.includes("@")) {
       setError("Enter a valid email address.");
       return;
     }
+    setSending(true);
     try {
       // Redirect back to wherever the app is actually running (localhost in
       // dev, the Vercel URL in production) instead of Supabase's default
@@ -120,15 +131,26 @@ function LoginScreen() {
         email: email.trim(),
         options: { emailRedirectTo: window.location.origin },
       });
-      if (error) setError(friendlyAuthError(error));
-      else setSent(true);
+      if (error) {
+        setError(friendlyAuthError(error));
+        // Back off on rate limits instead of letting users hammer resend
+        if (/rate limit|too many|over.*limit/i.test(error?.message || "")) setCooldown(60);
+      } else {
+        setSent(true);
+        setCooldown(60);
+      }
     } catch (e) {
       setError(friendlyAuthError(e));
+    } finally {
+      setSending(false);
     }
   }
 
   function friendlyAuthError(error) {
     const msg = error?.message || String(error);
+    if (/rate limit|too many requests|over email send limit/i.test(msg)) {
+      return "Too many sign-in attempts — Supabase is temporarily rate-limiting this email. Wait a few minutes, then try again.";
+    }
     if (/failed to fetch|networkerror|network request failed/i.test(msg)) {
       return isSupabaseConfigured
         ? "Can't reach Supabase. Check your network connection and that your Supabase project is running."
@@ -171,10 +193,11 @@ function LoginScreen() {
             {error && <div style={{ fontSize: 12, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "8px 12px", marginTop: 10 }}>{error}</div>}
             <button
               onClick={sendLink}
+              disabled={sending || cooldown > 0}
               className="jt-btn-primary"
-              style={{ marginTop: 14, width: "100%", padding: "12px 10px", borderRadius: 12, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}
+              style={{ marginTop: 14, width: "100%", padding: "12px 10px", borderRadius: 12, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: sending || cooldown > 0 ? "not-allowed" : "pointer", fontFamily: FONT, opacity: sending || cooldown > 0 ? 0.6 : 1 }}
             >
-              Send sign-in link
+              {sending ? "Sending…" : cooldown > 0 ? `Retry in ${cooldown}s` : "Send sign-in link"}
             </button>
           </>
         )}

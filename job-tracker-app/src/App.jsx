@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Plus, X, ExternalLink, Bell, Search, Trash2, Pencil, LogOut,
-  LayoutGrid, Table2, Briefcase,
+  LayoutGrid, Table2, Briefcase, Globe, GripVertical,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
@@ -58,6 +58,10 @@ const GLOBAL_CSS = `
 .jt-gradient-text { background: linear-gradient(92deg,#6366F1,#A855F7 50%,#EC4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .jt-stat { animation: jtFadeUp .4s ease both; transition: transform .15s ease, box-shadow .15s ease; }
 .jt-stat:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -16px rgba(15,23,42,.25); }
+.jt-sites-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 640px) { .jt-sites-grid { grid-template-columns: 1fr; } }
+.jt-site-card { animation: jtFadeUp .35s ease both; transition: transform .15s ease, box-shadow .15s ease; cursor: pointer; }
+.jt-site-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -14px rgba(99,102,241,.45); }
 `;
 
 function daysUntil(dateStr) {
@@ -99,6 +103,32 @@ function followUpLabel(job) {
   const due = daysUntil(job.follow_up);
   if (due === null) return null;
   return due < 0 ? `${Math.abs(due)}d overdue` : due === 0 ? "today" : `in ${due}d`;
+}
+
+// ---- Job sites helpers (second tab) ----
+
+// Normalize user input ("google.com", "www.naukri.com/jobs") to a full https URL.
+function normalizeSiteUrl(input) {
+  const trimmed = (input || "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+// Extract the hostname for logo lookup + display.
+function getSiteDomain(url) {
+  try {
+    return new URL(normalizeSiteUrl(url)).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+// Auto-fetch the site's logo via Google's favicon service (no API key needed).
+function getSiteLogoUrl(url, size = 128) {
+  const domain = getSiteDomain(url);
+  if (!domain) return "";
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
 }
 
 function LoginScreen() {
@@ -265,6 +295,15 @@ export default function App() {
   const [dragId, setDragId] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [view, setView] = useState("board");
+  const [activeTab, setActiveTab] = useState("tracker");
+  const [sites, setSites] = useState([]);
+  const [siteForm, setSiteForm] = useState({ id: null, name: "", url: "" });
+  const [siteModalOpen, setSiteModalOpen] = useState(false);
+  const [siteSaveError, setSiteSaveError] = useState("");
+  const [brokenLogos, setBrokenLogos] = useState({});
+  const [dragSiteId, setDragSiteId] = useState(null);
+  const [siteDropTarget, setSiteDropTarget] = useState(null);
+  const [lastSiteDragEnd, setLastSiteDragEnd] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -280,11 +319,35 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     fetchJobs();
+    fetchSites();
   }, [session]);
 
   async function fetchJobs() {
     const { data, error } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
     if (!error) setJobs(data);
+  }
+
+  async function fetchSites() {
+    // Prefer position order (drag-reorder); fall back gracefully if the
+    // column doesn't exist yet (user hasn't run the migration).
+    let { data, error } = await supabase
+      .from("job_sites")
+      .select("*")
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) {
+      if (/relation .* does not exist|could not find the table/i.test(error.message || "")) {
+        return;
+      }
+      if (/column .*position.* does not exist|position/i.test(error.message || "")) {
+        const retry = await supabase.from("job_sites").select("*").order("created_at", { ascending: false });
+        if (!retry.error) setSites(retry.data || []);
+        return;
+      }
+      console.error("Failed to fetch job sites:", error.message);
+      return;
+    }
+    setSites(data || []);
   }
 
   const filtered = useMemo(() => {
@@ -368,6 +431,103 @@ export default function App() {
     fetchJobs();
   }
 
+  function openAddSite() {
+    setSiteForm({ id: null, name: "", url: "" });
+    setSiteSaveError("");
+    setSiteModalOpen(true);
+  }
+
+  function openEditSite(site) {
+    setSiteForm({ id: site.id, name: site.name, url: site.url });
+    setSiteSaveError("");
+    setSiteModalOpen(true);
+  }
+
+  async function saveSite() {
+    const name = (siteForm.name || "").trim();
+    const url = normalizeSiteUrl(siteForm.url);
+    if (!name || !getSiteDomain(url)) {
+      setSiteSaveError("Enter a name and a valid website (e.g. naukri.com).");
+      return;
+    }
+    if (!session?.user?.id && !siteForm.id) {
+      setSiteSaveError("You are not signed in.");
+      return;
+    }
+    const payload = { name, url };
+    let error;
+    if (siteForm.id) {
+      ({ error } = await supabase.from("job_sites").update(payload).eq("id", siteForm.id));
+    } else {
+      // Append new sites at the end of the custom order.
+      const withPosition = { ...payload, user_id: session.user.id, position: sites.length };
+      ({ error } = await supabase.from("job_sites").insert([withPosition]));
+      if (error && /column .*position/i.test(error.message || "")) {
+        // Column not migrated yet — retry without position.
+        ({ error } = await supabase
+          .from("job_sites")
+          .insert([{ ...payload, user_id: session.user.id }]));
+      }
+    }
+    if (error) {
+      setSiteSaveError(
+        /relation .* does not exist|could not find the table/i.test(error.message || "")
+          ? "The job_sites table doesn't exist yet. Run the updated supabase_schema.sql in Supabase SQL Editor, then try again."
+          : error.message
+      );
+      return;
+    }
+    setSiteModalOpen(false);
+    fetchSites();
+  }
+
+  async function removeSite(id) {
+    await supabase.from("job_sites").delete().eq("id", id);
+    fetchSites();
+  }
+
+  function openSiteInNewTab(site) {
+    // Opens in a new tab so the site's own login cookies persist —
+    // once you log in there, the browser keeps you logged in.
+    const url = normalizeSiteUrl(site.url);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function reorderSites(draggedId, targetId) {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    const fromIdx = sites.findIndex((s) => s.id === draggedId);
+    const toIdx = sites.findIndex((s) => s.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = [...sites];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setSites(next);
+    persistSiteOrder(next);
+  }
+
+  async function persistSiteOrder(ordered) {
+    // Persist the new order; ignore position-column errors for unmigrated DBs
+    // (order still works locally until the user runs the new SQL).
+    try {
+      await Promise.all(
+        ordered.map((site, idx) =>
+          supabase.from("job_sites").update({ position: idx }).eq("id", site.id)
+        )
+      );
+    } catch (e) {
+      console.error("Failed to persist site order:", e?.message || e);
+    }
+  }
+
+  function handleSiteDrop(e, targetId) {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = e.dataTransfer.getData("text/plain") || dragSiteId;
+    setDragSiteId(null);
+    setSiteDropTarget(null);
+    if (id) reorderSites(id, targetId);
+  }
+
   async function moveStatus(id, status) {
     const job = jobs.find((j) => j.id === id);
     if (!job || job.status === status) return;
@@ -407,11 +567,11 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={openAdd}
+              onClick={activeTab === "tracker" ? openAdd : openAddSite}
               className="jt-btn-primary"
               style={{ display: "flex", alignItems: "center", gap: 7, color: "#fff", border: "none", borderRadius: 12, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT, boxShadow: "0 10px 20px -8px rgba(0,122,255,.55)" }}
             >
-              <Plus size={16} /> Add application
+              <Plus size={16} /> {activeTab === "tracker" ? "Add application" : "Add job site"}
             </button>
             <button
               onClick={() => supabase.auth.signOut()}
@@ -422,6 +582,126 @@ export default function App() {
           </div>
         </div>
 
+        {/* Tabs: Applications / Job sites */}
+        <div style={{ display: "flex", background: "rgba(255,255,255,.85)", backdropFilter: "blur(12px)", borderRadius: 16, padding: 4, marginBottom: 16, border: "1px solid rgba(255,255,255,.9)", boxShadow: "0 10px 24px -20px rgba(15,23,42,.3)", gap: 4 }}>
+          <button
+            onClick={() => setActiveTab("tracker")}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", padding: "10px 16px", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: FONT,
+              background: activeTab === "tracker" ? "#007AFF" : "transparent",
+              color: activeTab === "tracker" ? "#fff" : "#64748B",
+              boxShadow: activeTab === "tracker" ? "0 6px 14px -6px rgba(0,122,255,.6)" : "none",
+            }}
+          >
+            <Briefcase size={14} /> Applications
+          </button>
+          <button
+            onClick={() => setActiveTab("sites")}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", padding: "10px 16px", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: FONT,
+              background: activeTab === "sites" ? "#007AFF" : "transparent",
+              color: activeTab === "sites" ? "#fff" : "#64748B",
+              boxShadow: activeTab === "sites" ? "0 6px 14px -6px rgba(0,122,255,.6)" : "none",
+            }}
+          >
+            <Globe size={14} /> Job sites
+          </button>
+        </div>
+
+        {activeTab === "sites" ? (
+          <div>
+            <div style={{ background: "rgba(255,255,255,.85)", backdropFilter: "blur(12px)", borderRadius: 14, padding: "12px 16px", marginBottom: 12, border: "1px solid rgba(255,255,255,.9)", fontSize: 13, color: "#64748B" }}>
+              {sites.length} saved site{sites.length !== 1 ? "s" : ""} · click a tile to open it in a new tab, drag to reorder. Log in once on each site and your browser keeps you logged in.
+            </div>
+            {sites.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "56px 16px", color: "#94A3B8", border: "2px dashed #C4B5FD", borderRadius: 20, background: "rgba(255,255,255,.6)" }}>
+                <div style={{ width: 56, height: 56, borderRadius: 18, margin: "0 auto 14px", background: "linear-gradient(135deg,#EEF2FF,#FAF5FF)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Globe size={26} color="#A855F7" />
+                </div>
+                <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600, color: "#64748B" }}>No job sites yet. Save Naukri, LinkedIn, etc. for one-click access.</p>
+                <button onClick={openAddSite} className="jt-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "#fff", border: "none", borderRadius: 12, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>
+                  <Plus size={16} /> Add your first job site
+                </button>
+              </div>
+            ) : (
+              <div className="jt-sites-grid">
+                {sites.map((site, idx) => {
+                  const logo = getSiteLogoUrl(site.url);
+                  const logoKey = `${site.id}:${logo}`;
+                  const logoBroken = brokenLogos[logoKey];
+                  const dragging = dragSiteId === site.id;
+                  const isDropTarget = siteDropTarget === site.id;
+                  return (
+                    <div
+                      key={site.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", site.id);
+                        setDragSiteId(site.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragSiteId(null);
+                        setSiteDropTarget(null);
+                        setLastSiteDragEnd(Date.now());
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "move";
+                        setSiteDropTarget(site.id);
+                      }}
+                      onDragLeave={(e) => {
+                        if (e.currentTarget.contains(e.relatedTarget)) return;
+                        setSiteDropTarget((t) => (t === site.id ? null : t));
+                      }}
+                      onDrop={(e) => handleSiteDrop(e, site.id)}
+                      onClick={() => {
+                        // Suppress the click that fires right after a drag.
+                        if (Date.now() - lastSiteDragEnd < 200) return;
+                        openSiteInNewTab(site);
+                      }}
+                      className="jt-site-card"
+                      title={`${site.name} — ${site.url} (drag to reorder)`}
+                      style={{ animationDelay: `${Math.min(idx, 8) * 45}ms`, background: isDropTarget ? "#EEF2FF" : "#fff", border: isDropTarget ? "2px dashed #6366F1" : "1px solid #F1F5F9", borderRadius: 16, padding: 16, display: "flex", alignItems: "center", gap: 12, boxShadow: isDropTarget ? "0 0 0 4px #E0E7FF" : "0 4px 12px -6px rgba(15,23,42,.15)", opacity: dragging ? 0.4 : 1, cursor: "grab" }}
+                    >
+                      <div style={{ color: "#CBD5E1", flexShrink: 0, cursor: "grab", display: "flex" }} title="Drag to reorder">
+                        <GripVertical size={16} />
+                      </div>
+                      <div style={{ width: 52, height: 52, borderRadius: 14, background: "#F8FAFF", border: "1px solid #EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                        {logo && !logoBroken ? (
+                          <img
+                            src={logo}
+                            alt={`${site.name} logo`}
+                            width={32}
+                            height={32}
+                            loading="lazy"
+                            draggable={false}
+                            onError={() => setBrokenLogos((prev) => ({ ...prev, [logoKey]: true }))}
+                            style={{ objectFit: "contain", pointerEvents: "none" }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 22, fontWeight: 800, color: "#6366F1" }}>
+                            {(site.name || "?").trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{site.name}</div>
+                        <div style={{ fontSize: 12, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getSiteDomain(site.url)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => openEditSite(site)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8" }} aria-label="Edit site"><Pencil size={14} /></button>
+                        <button onClick={() => removeSite(site.id)} className="jt-icon-btn" style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8" }} aria-label="Delete site"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+        <>
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
           {stats.map((s, i) => (
@@ -637,6 +917,8 @@ export default function App() {
             )}
           </div>
         )}
+        </>
+        )}
 
         {modalOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
@@ -694,6 +976,42 @@ export default function App() {
                 <div style={{ display: "flex", gap: 10, marginTop: 6, justifyContent: "flex-end" }}>
                   <button onClick={() => setModalOpen(false)} style={{ padding: "10px 18px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#475569", fontFamily: FONT }}>Cancel</button>
                   <button onClick={saveForm} className="jt-btn-primary" style={{ padding: "10px 22px", borderRadius: 12, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {siteModalOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+            <div className="jt-modal" style={{ background: "#fff", borderRadius: 20, padding: 24, width: 400, maxWidth: "100%", boxShadow: "0 32px 80px -24px rgba(76,29,149,.5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 className="jt-gradient-text" style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{siteForm.id ? "Edit job site" : "Add job site"}</h3>
+                <button onClick={() => setSiteModalOpen(false)} className="jt-icon-btn" style={{ border: "none", background: "#F1F5F9", cursor: "pointer", color: "#64748B", borderRadius: 10, padding: 6 }} aria-label="Close"><X size={16} /></button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Name *</label>
+                  <input value={siteForm.name} onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })} placeholder="e.g. Naukri" className="jt-input" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Website *</label>
+                  <input value={siteForm.url} onChange={(e) => setSiteForm({ ...siteForm, url: e.target.value })} placeholder="e.g. naukri.com" className="jt-input" style={inputStyle} />
+                </div>
+                {getSiteDomain(siteForm.url) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#F8FAFF", border: "1px solid #EEF2FF", borderRadius: 12, padding: "10px 12px" }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: "#fff", border: "1px solid #EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                      <img src={getSiteLogoUrl(siteForm.url, 64)} alt="Site logo preview" width={24} height={24} loading="lazy" style={{ objectFit: "contain" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748B" }}>
+                      Logo auto-fetched for <strong style={{ color: "#0F172A" }}>{getSiteDomain(siteForm.url)}</strong>
+                    </div>
+                  </div>
+                )}
+                {siteSaveError && <div style={{ fontSize: 12, fontWeight: 600, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "8px 12px" }}>{siteSaveError}</div>}
+                <div style={{ display: "flex", gap: 10, marginTop: 6, justifyContent: "flex-end" }}>
+                  <button onClick={() => setSiteModalOpen(false)} style={{ padding: "10px 18px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#475569", fontFamily: FONT }}>Cancel</button>
+                  <button onClick={saveSite} className="jt-btn-primary" style={{ padding: "10px 22px", borderRadius: 12, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Save</button>
                 </div>
               </div>
             </div>

@@ -16,5 +16,13 @@ if (!isSupabaseConfigured) {
 // Requests will fail until real creds are provided, but the UI still renders.
 export const supabase = createClient(
   supabaseUrl || "https://placeholder.supabase.co",
-  supabaseAnonKey || "placeholder-anon-key"
+  supabaseAnonKey || "placeholder-anon-key",
+  {
+    auth: {
+      // Keep the user logged in across reloads / restarts.
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  }
 );

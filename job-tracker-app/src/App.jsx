@@ -156,7 +156,12 @@ function LoginScreen() {
       // Returns to wherever the app runs; must be allowlisted in Supabase.
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin },
+        options: {
+          redirectTo: window.location.origin,
+          // Force the "choose an account" screen instead of auto-using
+          // the browser's default Google account
+          queryParams: { prompt: "select_account" },
+        },
       });
       if (error) {
         setError(friendlyAuthError(error));
